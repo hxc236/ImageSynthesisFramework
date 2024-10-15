@@ -23,6 +23,7 @@ class BaseConfig(object):
     load_iter = 0
     epoch = 'latest'
 
+
     def _parse(self, kwargs):
         """
         update config

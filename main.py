@@ -1,17 +1,16 @@
 from torch.utils.data import DataLoader
-from PIL import Image
-import matplotlib.pyplot as plt
-import numpy as np
 import models
-import glob
-import os
-import Factory
+from config.monet2photo_config import Monet2PhotoConfig
+from data.monet2photo_dataset import Monet2PhotoDataset
+from train_utils import get_config, get_dataset
 
 def train(**kwargs):
-    config = Factory.get_config(kwargs)
-    dataset = Factory.get_dataset(kwargs)
+    print('kwargs:', kwargs)
+
+    config = get_config(kwargs)
+    dataset = get_dataset(config)
     dataloader = DataLoader(dataset, batch_size=config.batch_size, shuffle=True,
-                            num_workers=config.num_workers, pin_memory=True)
+                            num_workers=6, pin_memory=True)
 
     model = getattr(models, config.model)(config)
     model.setup(config)
