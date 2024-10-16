@@ -5,7 +5,6 @@ import data
 
 
 
-
 def get_config(kwargs):
     global config
     dataset = kwargs.dataset
