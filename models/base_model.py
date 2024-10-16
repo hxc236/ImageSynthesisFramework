@@ -384,13 +384,35 @@ class FeedForward(nn.Module):
 
 
 class ResnetBlock(nn.Module):
+    """
+    定义一个ResNet块，用于深度学习模型中的特征学习.
+
+    ResNet块包含两个卷积层，每个卷积层后接一个标准化层和一个ReLU激活函数.
+    如果指定使用dropout，还会在一个卷积层后加入dropout层.这个块的主要作用是
+    在神经网络中学习残差函数，有助于缓解深层网络中的梯度消失问题.
+
+    参数:
+        dim (int): 输入和输出的通道维度.
+        padding_type (str): 卷积层前使用的填充类型，可以是'reflect', 'replicate'或'zero'.
+        norm_layer (nn.Module): 使用的标准化层类型.
+        use_dropout (bool): 是否使用dropout.
+        use_bias (bool): 卷积层是否使用偏差.
+    """
+
     def __init__(self, dim, padding_type, norm_layer, use_dropout, use_bias):
         super().__init__()
+        # 构建卷积块并保存为成员变量
         self.conv_block = self.build_conv_block(dim, padding_type, norm_layer, use_dropout, use_bias)
 
     def build_conv_block(self, dim, padding_type, norm_layer, use_dropout, use_bias):
+        """
+        构建并返回一个包含两个卷积层的序列化卷积块.
+
+        参数和返回值同__init__方法.
+        """
         conv_block = []
         p = 0
+        # 根据填充类型添加相应的填充层
         if padding_type == 'reflect':
             conv_block += [nn.ReflectionPad2d(1)]
         elif padding_type == 'replicate':
@@ -398,11 +420,13 @@ class ResnetBlock(nn.Module):
         elif padding_type == 'zero':
             p = 1
 
+        # 第一个卷积层及其后续的标准化层和ReLU激活函数
         conv_block += [nn.Conv2d(dim, dim, kernel_size=3, padding=p, bias=use_bias), norm_layer(dim), nn.ReLU(True)]
+        # 如果使用dropout，则添加dropout层
         if use_dropout:
             conv_block += [nn.Dropout(0.5)]
 
-        p = 0
+        # 同样的逻辑适用于第二个卷积层，但没有ReLU激活函数
         if padding_type == 'reflect':
             conv_block += [nn.ReflectionPad2d(1)]
         elif padding_type == 'replicate':
@@ -411,8 +435,98 @@ class ResnetBlock(nn.Module):
             p = 1
         conv_block += [nn.Conv2d(dim, dim, kernel_size=3, padding=p, bias=use_bias), norm_layer(dim)]
 
+        # 返回序列化的卷积块
         return nn.Sequential(*conv_block)
 
     def forward(self, x):
+        """
+        定义前向传播计算.
+
+        参数:
+            x (Tensor): 输入张量.
+
+        返回:
+            Tensor: 输入张量和经过卷积块的输出张量之和，即残差连接的结果.
+        """
+        # 残差连接：将输入张量与经过卷积块的输出张量相加
         out = x + self.conv_block(x)
         return out
+
+
+class UnetBlock(nn.Module):
+    """
+    定义一个Unet块，用于构建Unet模型。
+
+    Unet块是Unet模型的一部分，包含下采样和上采样路径，可以堆叠形成整个Unet结构。
+    这个块的特殊之处在于它能接收来自先前路径的输入，并将其与下采样后上采样回来的特征图合并。
+
+    参数:
+    - in_channel: 输入通道数。
+    - out_channel: 输出通道数，默认为1。
+    - hidden_channel: 隐藏通道数，默认为1。
+    - pre_module: 前一个模块，用于拼接特征图。
+    - inner: 标志表示这是最内部的Unet块，默认为False。
+    - outer: 标志表示这是最外部的Unet块，默认为False。
+    - norm_layer: 使用的规范化层，默认为nn.BatchNorm2d。
+    - use_dropout: 是否使用dropout，默认为False。
+    """
+    def __init__(self, in_channel=None, out_channel=1, hidden_channel=1, pre_module=None, inner=False, outer=False, norm_layer=nn.BatchNorm2d, use_dropout=False):
+        super().__init__()
+        self.outer = outer
+        # 判断是否使用偏置，取决于规范化层的类型
+        if type(norm_layer) == functools.partial:
+            use_bias = norm_layer.func == nn.InstanceNorm2d
+        else:
+            use_bias = norm_layer == nn.InstanceNorm2d
+
+        # 如果没有指定输入通道数，假设它等于输出通道数
+        if in_channel == None:
+            in_channel = out_channel
+
+        # 定义下采样层
+        downconv = nn.Conv2d(in_channel, hidden_channel, kernel_size=4, stride=2, padding=1, bias=use_bias)
+        downrelu = nn.LeakyReLU(0.2, True)
+        downnorm = norm_layer(hidden_channel)
+        # 定义上采样层
+        uprelu = nn.ReLU(True)
+        upnorm = norm_layer(out_channel)
+
+        # 根据Unet块的位置（外层、内层或其他），配置不同的层结构
+        if outer:
+            upconv = nn.ConvTranspose2d(hidden_channel * 2, out_channel, kernel_size=4, stride=2, padding=1)
+            down = [downconv]
+            up = [uprelu, upconv, nn.Tanh()]
+            model = down + [pre_module] + up
+        elif inner:
+            upconv = nn.ConvTranspose2d(hidden_channel, out_channel, kernel_size=4, stride=2, padding=1, bias=use_bias)
+            down = [downrelu, downconv]
+            up = [uprelu, upconv, upnorm]
+            model = down + up
+        else:
+            upconv = nn.ConvTranspose2d(hidden_channel * 2, out_channel, kernel_size=4, stride=2, padding=1, bias=use_bias)
+            down = [downrelu, downconv, downnorm]
+            up = [uprelu, upconv, upnorm]
+
+            # 根据需求添加dropout层
+            if use_dropout:
+                model = down + [pre_module] + up + [nn.Dropout(0.5)]
+            else:
+                model = down + [pre_module] + up
+
+        self.model = nn.Sequential(*model)
+
+    def forward(self, x):
+        """
+        定义前向传播过程。
+
+        参数:
+        - x: 输入的特征图。
+
+        返回:
+        - 如果是外层块，直接返回模型的输出。
+        - 否则，将输入特征图与模型输出拼接后返回。
+        """
+        if self.outer:
+            return self.model(x)
+        else:
+            return torch.cat([x, self.model(x)], dim=1)
