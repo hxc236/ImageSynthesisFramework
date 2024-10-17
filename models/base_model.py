@@ -321,22 +321,84 @@ class BaseModel(nn.Module):
 
 
 class Identity(nn.Module):
+    """
+    该类继承自nn.Module，定义了一个最简单的身份映射模型。
+    它的作用是将输入直接作为输出返回，不进行任何变换。
+
+    Attributes:
+        该类没有定义任何属性。
+    """
+
     def forward(self, x):
+        """
+        定义了模型的前向传播逻辑。
+
+        参数:
+            x (Tensor): 输入数据，可以是任意形状的张量。
+
+        返回:
+            Tensor: 输入数据x直接作为输出返回，未经过任何变换。
+        """
         return x
 
+
 class Residual(nn.Module):
+    """
+    Residual模块，用于在神经网络中实现跳跃连接。
+
+    该模块通过将一个函数（通常是一个或多个层的组合）应用于输入上，并将结果与原始输入相加，
+    来实现输入的变换。这种设计模式有助于缓解深层神经网络中的梯度消失问题。
+
+    继承自:
+        nn.Module: PyTorch的基类模块，用于构建自定义的神经网络组件。
+    """
+
     def __init__(self, fn):
+        """
+        初始化Residual模块。
+
+        参数:
+            fn (Callable): 一个函数或层的序列，用于对输入数据进行变换。这通常包括一个或多个神经网络层。
+        """
         super().__init__()
         self.fn = fn
 
     def forward(self, x):
+        """
+        定义前向传播计算。
+
+        通过应用变换函数`self.fn`到输入`x`上，并将结果与原始输入`x`相加，
+        来实现残差块的前向传播。
+
+        参数:
+            x (Tensor): 输入数据，通常是一个张量，表示神经网络的一层输入。
+
+        返回:
+            Tensor: 变换后的数据加上原始输入的和，作为残差块的输出。
+        """
         return self.fn(x) + x
 
+
 class Norm(nn.Module):
+    """
+    一个用于在神经网络中应用归一化以及后续函数的模块。
+
+    该类继承自`nn.Module`，其主要功能是先对输入数据进行层归一化（Layer Normalization），
+    然后应用传入的函数`fn`。层归一化有助于训练深层神经网络，通过归一化数据分布来加速训练过程
+    并提高模型的稳定性。
+
+    参数:
+    - dim: int，归一化维度。指明输入数据的特征维度，归一化将沿着这个维度进行。
+    - fn: function，应用在归一化数据上的函数。这允许用户自定义后续的网络层或操作。
+
+    返回:
+    - 该类实例化后不直接返回值，但包含了一个可以对输入数据进行层归一化并应用`fn`函数的方法。
+    """
     def __init__(self, dim, fn):
         super().__init__()
-        self.norm = nn.LayerNorm(dim)
-        self.fn = fn
+        self.norm = nn.LayerNorm(dim)  # 初始化层归一化模块，指定归一化维度
+        self.fn = fn  # 保存外部传入的函数，后续将应用于归一化后的数据
+
 
     # 先对输入 x 进行层归一化处理，然后将结果传递给 fn 函数，并返回最终结果
     def forward(self, x):
@@ -530,3 +592,389 @@ class UnetBlock(nn.Module):
             return self.model(x)
         else:
             return torch.cat([x, self.model(x)], dim=1)
+
+
+class UnetBlock_with_z(nn.Module):
+    def __init__(self, in_channel, out_channel, hidden_channel, nz=0, pre_module=None, inner=False, outer=False,
+                 norm_layer=None, use_dropout=False):
+        super(UnetBlock_with_z, self).__init__()
+        downconv = []
+        self.inner = inner
+        self.outer = outer
+        self.nz = nz
+        in_channel = in_channel + nz
+        downconv += [nn.Conv2d(in_channel, hidden_channel, kernel_size=4, stride=2, padding=1)]
+        downrelu = nn.LeakyReLU(0.2, True)
+        uprelu = nn.ReLU(True)
+
+        if self.outer:
+            upconv = [nn.ConvTranspose2d(hidden_channel * 2, out_channel, kernel_size=4, stride=2, padding=1)]
+            down = downconv
+            up = [uprelu] + upconv + [nn.Tanh()]
+        elif self.inner:
+            upconv = [nn.ConvTranspose2d(hidden_channel, out_channel, kernel_size=4, stride=2, padding=1)]
+            down = [downrelu] + downconv
+            up = [uprelu] + upconv + [norm_layer(out_channel)]
+        else:
+            upconv = [nn.ConvTranspose2d(hidden_channel * 2, out_channel, kernel_size=4, stride=2, padding=1)]
+            down = [downrelu] + downconv + [norm_layer(hidden_channel)]
+            up = [uprelu] + upconv + [norm_layer(out_channel)]
+            if use_dropout:
+                up += [nn.Dropout(0.5)]
+        self.down = nn.Sequential(*down)
+        self.pre_module = pre_module
+        self.up = nn.Sequential(*up)
+
+    def forward(self, x, z):
+        if self.nz > 0:
+            z_img = z.view(z.size(0), z.size(1), 1, 1).expand(z.size(0), z.size(1), x.size(2), x.size(3))
+            x_and_z = torch.cat([x, z_img], dim=1)
+        else:
+            x_and_z = x
+
+        if self.outer:
+            x1 = self.down(x_and_z)
+            x2 = self.pre_module(x1, z)
+            return self.up(x2)
+        elif self.inner:
+            x1 = self.up(self.down(x_and_z))
+            return torch.cat([x1, x], dim=1)
+        else:
+            x1 = self.down(x_and_z)
+            x2 = self.pre_module(x1, z)
+            return torch.cat([self.up(x2), x], dim=1)
+
+
+class D_NLayersMulti(nn.Module):
+    def __init__(self, in_channel, ndf=64, n_layers=3, norm_layer=nn.BatchNorm2d, num_D=1):
+        super(D_NLayersMulti, self).__init__()
+        self.num_D = num_D
+        if num_D == 1:
+            layers = self.get_layers(in_channel, ndf, n_layers, norm_layer)
+            self.model = nn.Sequential(*layers)
+        else:
+            layers = self.get_layers(in_channel, ndf, n_layers, norm_layer)
+            self.add_module("model_0", nn.Sequential(*layers))
+            self.down = nn.AvgPool2d(kernel_size=3, stride=2, padding=[1, 1], count_include_pad=False)
+
+            for i in range(1, num_D):
+                ndf_i = int(round(ndf / (2 ** i)))
+                layers = self.get_layers(in_channel, ndf_i, n_layers, norm_layer)
+                self.add_module("model_%d" % i, nn.Sequential(*layers))
+
+    def get_layers(self, in_channel, ndf=64, n_layers=3, norm_layer=nn.BatchNorm2d):
+        kw = 4
+        padw = 1
+        sequence = [
+            nn.Conv2d(in_channel, ndf, kernel_size=kw, stride=2, padding=padw),
+            nn.LeakyReLU(0.2, True)
+        ]
+        nf_multi = 1
+        nf_multi_prev = 1
+        for n in range(1, n_layers):
+            nf_multi_prev = nf_multi
+            nf_multi = min(2 ** n, 8)
+            sequence += [
+                nn.Conv2d(ndf * nf_multi_prev, ndf * nf_multi, kw, 2, padw),
+                norm_layer(ndf * nf_multi),
+                nn.LeakyReLU(0.2, True)
+            ]
+
+        nf_multi_prev = nf_multi
+        nf_multi = min(2 ** n_layers, 8)
+        sequence += [
+            nn.Conv2d(ndf * nf_multi_prev, ndf * nf_multi, kw, 1, padw),
+            norm_layer(ndf * nf_multi),
+            nn.LeakyReLU(0.2, True)
+        ]
+        sequence += [
+            nn.Conv2d(ndf * nf_multi, 1, kw, 1, padw)
+        ]
+        return sequence
+
+    def forward(self, x):
+        if self.num_D == 1:
+            return self.model(x)
+        result = []
+        down = x
+        for i in range(self.num_D):
+            model = getattr(self, "model_%d" % i)
+            result.append(model(down))
+            if i != self.num_D - 1:
+                down = self.down(down)
+        return result
+
+
+class ResBlock(nn.Module):
+    def __init__(self, in_channel, out_channel, norm_layer=None):
+        super(ResBlock, self).__init__()
+        layers = []
+        if norm_layer is not None:
+            layers += [norm_layer(in_channel)]
+        layers += [
+            nn.ReLU(True),
+            nn.Conv2d(in_channel, in_channel, 3, 1, 1, bias=True)
+        ]
+        if norm_layer is not None:
+            layers += [norm_layer(in_channel)]
+        layers += [
+            nn.ReLU(True),
+            nn.Conv2d(in_channel, out_channel, 3, 1, 1, bias=True),
+            nn.AvgPool2d(2, 2)
+        ]
+
+        self.conv = nn.Sequential(*layers)
+        self.shortcut = nn.Sequential(
+            nn.AvgPool2d(2, 2),
+            nn.Conv2d(in_channel, out_channel, 1, 1, 0, bias=True)
+        )
+
+    def forward(self, x):
+        out = self.conv(x) + self.shortcut(x)
+        return out
+
+
+class E_ResNet(nn.Module):
+    def __init__(self, in_channel=1, out_channel=1, ndf=64, n_blocks=4, norm_layer=None, vaeLike=False):
+        super(E_ResNet, self).__init__()
+        self.vaeLike = vaeLike
+        max_ndf = 4
+        conv_layers = [
+            nn.Conv2d(in_channel, ndf, 4, 2, 1, bias=True)
+        ]
+        for n in range(1, n_blocks):
+            in_ndf = ndf * min(max_ndf, n)
+            out_ndf = ndf * min(max_ndf, n + 1)
+            conv_layers += [
+                ResBlock(in_ndf, out_ndf, norm_layer)
+            ]
+        conv_layers += [
+            nn.ReLU(True),
+            nn.AvgPool2d(8)
+        ]
+
+        if vaeLike:
+            self.fc = nn.Sequential(*[nn.Linear(out_ndf, out_channel)])
+            self.fcVar = nn.Sequential(*[nn.Linear(out_ndf, out_channel)])
+        else:
+            self.fc = nn.Sequential(*[nn.Linear(out_ndf, out_channel)])
+        self.conv = nn.Sequential(*conv_layers)
+
+    def forward(self, x):
+        x_conv = self.conv(x)
+        conv_flat = x_conv.view(x.size(0), -1)
+        output = self.fc(conv_flat)
+        if self.vaeLike:
+            outputVar = self.fcVar(conv_flat)
+            return output, outputVar
+        else:
+            return output
+
+
+class ConvBlock(nn.Module):
+    def __init__(self, in_channel, out_channel, kernel_size=1, stride=1, groups=1, norm_layer=None):
+        super().__init__()
+        padding = (kernel_size - 1) // 2
+        conv = []
+        conv += [
+            norm_layer(in_channel),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(in_channel, out_channel, kernel_size=kernel_size, stride=stride, padding=padding, groups=groups,
+                      bias=False)
+        ]
+
+        self.conv = nn.Sequential(*conv)
+
+    def forward(self, x):
+        return self.conv(x)
+
+
+class DilatedConvBlock(nn.Module):
+    def __init__(self, in_channel, out_channel, kernel_size=(1, 1), stride=1, groups=1, dilated=(1, 1),
+                 norm_layer=None):
+        super().__init__()
+        padding = tuple(
+            [(k - 1) // 2 * d for k, d in zip(kernel_size, dilated)]
+        )
+        conv = []
+        conv += [
+            norm_layer(in_channel),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(in_channel, out_channel, kernel_size=kernel_size, stride=stride, padding=padding, groups=groups,
+                      dilation=dilated, bias=False)
+        ]
+        self.conv = nn.Sequential(*conv)
+
+    def forward(self, x):
+        return self.conv(x)
+
+
+class ADBlock(nn.Module):
+    def __init__(self, in_channel, out_channel, stride=1, groups=1, dilated=[1, 3, 5], norm_layer=None):
+        super().__init__()
+        mid = in_channel if in_channel <= out_channel else out_channel
+        self.w1 = nn.Parameter(torch.ones(1), requires_grad=True)
+        self.w2 = nn.Parameter(torch.ones(1), requires_grad=True)
+        self.w3 = nn.Parameter(torch.ones(1), requires_grad=True)
+
+        self.conv_1 = ConvBlock(in_channel, in_channel // 4, kernel_size=1, stride=1, norm_layer=norm_layer)
+        self.conv_2 = ConvBlock(in_channel // 4, mid, kernel_size=1, stride=1, norm_layer=norm_layer)
+
+        self.d_conv = nn.ModuleList()
+        for i in range(3):
+            self.d_conv.append(
+                DilatedConvBlock(mid, out_channel, kernel_size=(3, 3), stride=stride, groups=groups,
+                                 dilated=(dilated[i], dilated[i]), norm_layer=norm_layer)
+            )
+        self.gconv_3 = DilatedConvBlock(out_channel, out_channel, kernel_size=(1, 3), groups=groups, stride=(1, 1),
+                                        norm_layer=norm_layer)
+        if stride == 1:
+            self.res = ConvBlock(mid, out_channel, kernel_size=1, stride=1, norm_layer=norm_layer)
+        if stride == 2:
+            self.res = ConvBlock(mid, out_channel, kernel_size=2, stride=2, norm_layer=norm_layer)
+
+        # skip connection
+        if in_channel != out_channel or stride != 1:
+            if stride == 1:
+                self.conv_res = ConvBlock(in_channel, out_channel, kernel_size=1, stride=1, norm_layer=norm_layer)
+            if stride == 2:
+                self.conv_res = ConvBlock(in_channel, out_channel, kernel_size=2, stride=2, norm_layer=norm_layer)
+
+    def forward(self, x):
+        res = x
+        x = self.conv_1(x)
+        x = self.conv_2(x)
+        xd = self.w1 * self.d_conv[0](x) + self.w2 * self.d_conv[1](x) + self.w3 * self.d_conv[2](x)
+        x = xd + self.res(x)  # residual connection
+        x = self.gconv_3(x)
+        if hasattr(self, 'conv_res'):
+            res = self.conv_res(res)
+        return x + res
+
+
+class UpADBlock(nn.Module):
+    def __init__(self, in_channel, out_channel, stride=1, groups=1, dilated=[1, 3, 5], norm_layer=None):
+        super().__init__()
+        mid = in_channel if in_channel <= out_channel else out_channel
+        self.conv_1 = ConvBlock(in_channel, in_channel // 4, kernel_size=1, stride=1, norm_layer=norm_layer)
+        self.conv_2 = ConvBlock(in_channel // 4, mid, kernel_size=1, stride=1, norm_layer=norm_layer)
+
+        self.g_conv = nn.Sequential(
+            ConvBlock(mid, out_channel, kernel_size=3, stride=stride, groups=groups, norm_layer=norm_layer),
+            ConvBlock(out_channel, out_channel, kernel_size=3, stride=1, groups=groups, norm_layer=norm_layer)
+        )
+        self.gconv_3 = DilatedConvBlock(out_channel, out_channel, kernel_size=(1, 3), groups=groups, stride=(1, 1),
+                                        norm_layer=norm_layer)
+        # skip connection
+        if in_channel != out_channel or stride != 1:
+            if stride == 1:
+                self.conv_res = ConvBlock(in_channel, out_channel, kernel_size=1, stride=1, norm_layer=norm_layer)
+            if stride == 2:
+                self.conv_res = ConvBlock(in_channel, out_channel, kernel_size=2, stride=2, norm_layer=norm_layer)
+
+    def forward(self, x):
+        res = x
+        x = self.conv_1(x)
+        x = self.conv_2(x)
+        x = self.g_conv(x)
+
+        if hasattr(self, 'conv_res'):
+            res = self.conv_res(res)
+
+        return x + res
+
+
+def init_weights(net, init_type='normal', init_gain=0.02):
+    """Initialize network weights.
+
+    Parameters:
+        net (network)   -- network to be initialized
+        init_type (str) -- the name of an initialization method: normal | xavier | kaiming | orthogonal
+        init_gain (float)    -- scaling factor for normal, xavier and orthogonal.
+
+    Feel free to try yourself.
+    """
+
+    def init_func(m):  # define the initialization function
+        classname = m.__class__.__name__
+        if hasattr(m, 'weight') and (classname.find('Conv') != -1 or classname.find('Linear') != -1):
+            if init_type == 'normal':
+                init.normal_(m.weight.data, 0.0, init_gain)
+            elif init_type == 'xavier':
+                init.xavier_normal_(m.weight.data, gain=init_gain)
+            elif init_type == 'kaiming':
+                init.kaiming_normal_(m.weight.data, a=0, mode='fan_in')
+            elif init_type == 'orthogonal':
+                init.orthogonal_(m.weight.data, gain=init_gain)
+            else:
+                raise NotImplementedError('initialization method [%s] is not implemented' % init_type)
+            if hasattr(m, 'bias') and m.bias is not None:
+                init.constant_(m.bias.data, 0.0)
+        elif classname.find(
+                'BatchNorm2d') != -1:  # BatchNorm Layer's weight is not a matrix; only normal distribution applies.
+            init.normal_(m.weight.data, 1.0, init_gain)
+            init.constant_(m.bias.data, 0.0)
+
+    print('initialize network with %s' % init_type)
+    net.apply(init_func)  # apply the initialization function <init_func>
+
+
+def init_net(net, init_type='normal', init_gain=0.02, gpu_ids=[]):
+    """Initialize a network: 1. register CPU/GPU device (with multi-GPU support); 2. initialize the network weights
+    Parameters:
+        net (network)      -- the network to be initialized
+        init_type (str)    -- the name of an initialization method: normal | xavier | kaiming | orthogonal
+        gain (float)       -- scaling factor for normal, xavier and orthogonal.
+        gpu_ids (int list) -- which GPUs the network runs on: e.g., 0,1,2
+
+    Return an initialized network.
+    """
+    if len(gpu_ids) > 0:
+        assert (torch.cuda.is_available())
+        net.to(gpu_ids[0])
+        net = torch.nn.DataParallel(net, gpu_ids)  # multi-GPUs
+    init_weights(net, init_type, init_gain=init_gain)
+    return net
+
+
+def get_norm_layer(norm_type='instance'):
+    if norm_type == 'batch':
+        norm_layer = functools.partial(nn.BatchNorm2d, affine=True, track_running_stats=True)
+    elif norm_type == 'instance':
+        norm_layer = functools.partial(nn.InstanceNorm2d, affine=False, track_running_stats=False)
+    elif norm_type == 'none':
+        def norm_layer(x):
+            return Identity()
+    else:
+        raise NotImplementedError('normalization layer [%s] is not found' % norm_type)
+    return norm_layer
+
+
+def get_scheduler(optimizer, conf):
+    """Return a learning rate scheduler
+
+    Parameters:
+        optimizer          -- the optimizer of the network
+        opt (option class) -- stores all the experiment flags; needs to be a subclass of BaseOptions．　
+                              opt.lr_policy is the name of learning rate policy: linear | step | plateau | cosine
+
+    For 'linear', we keep the same learning rate for the first <opt.n_epochs> epochs
+    and linearly decay the rate to zero over the next <opt.n_epochs_decay> epochs.
+    For other schedulers (step, plateau, and cosine), we use the default PyTorch schedulers.
+    See https://pytorch.org/docs/stable/optim.html for more details.
+    """
+    if conf.lr_policy == 'linear':
+        def lambda_rule(epoch):
+            lr_l = 1.0 - max(0, epoch + conf.epoch_count - conf.n_epochs) / float(conf.n_epochs_decay + 1)
+            return lr_l
+
+        scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda_rule)
+    elif conf.lr_policy == 'step':
+        scheduler = lr_scheduler.StepLR(optimizer, step_size=conf.lr_decay_iters, gamma=0.1)
+    elif conf.lr_policy == 'plateau':
+        scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.2, threshold=0.01, patience=5)
+    elif conf.lr_policy == 'cosine':
+        scheduler = lr_scheduler.CosineAnnealingLR(optimizer, T_max=conf.n_epochs, eta_min=0)
+    else:
+        return NotImplementedError('learning rate policy [%s] is not implemented', conf.lr_policy)
+    return scheduler
