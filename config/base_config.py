@@ -14,7 +14,7 @@ class BaseConfig(object):
     n_epochs = 100
     n_epochs_decay = 100
     epoch_count = 1
-    batch_size = 8
+    batch_size = 4
 
     # vis
     verbose = False         # 用于调试和日志记录

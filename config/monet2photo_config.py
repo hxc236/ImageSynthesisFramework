@@ -11,8 +11,8 @@ class Monet2PhotoConfig(BaseConfig):
     preprocess = 'resize'
 
     # monet2photo
-    # dataroot = r'F:\ML\Dataset\经典风格迁移数据集\monet2photo'
-    dataroot = r'D:\Data\经典风格迁移数据集\monet2photo'
+    dataroot = r'F:\ML\Dataset\经典风格迁移数据集\monet2photo'
+    # dataroot = r'D:\Data\经典风格迁移数据集\monet2photo'
 
     dataset = 'monet2photo'
 

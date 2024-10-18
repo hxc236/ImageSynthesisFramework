@@ -1,1 +1,1 @@
-from .CycleGAN import
+from .CycleGAN import CycleGANModel

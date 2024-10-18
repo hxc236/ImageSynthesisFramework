@@ -30,7 +30,7 @@ class BaseModel(nn.Module):
         self.device = torch.device('cuda:{}'.format(self.gpu_ids[0])) if self.gpu_ids else torch.device('cpu')
         self.save_dir = os.path.join(conf.save_dir, conf.dataset + conf.task + conf.model)
         if not os.path.exists(self.save_dir):
-            os.mkdir(self.save_dir)
+            os.makedirs(self.save_dir)
         self.loss_names = []
         self.visual_names = []
         self.optimizers = []
@@ -82,7 +82,7 @@ class BaseModel(nn.Module):
         """
         # 如果模型是训练状态，则初始化调度器列表
         if self.isTrain:
-            self.schedulers = []
+            self.schedulers = [get_scheduler(optimizer, conf) for optimizer in self.optimizers]
         # 如果模型不是训练状态或者配置要求继续训练，则尝试加载网络
         if not self.isTrain or conf.continue_train:
             # 根据配置确定要加载的网络迭代次数或epoch数的后缀
@@ -135,6 +135,8 @@ class BaseModel(nn.Module):
         """
         # 记录更新前的学习率
         old_lr = self.optimizers[0].param_groups[0]['lr']
+
+        print("------------==================-----------------", self.schedulers)
 
         # 遍历所有学习率调度器
         for scheduler in self.schedulers:
