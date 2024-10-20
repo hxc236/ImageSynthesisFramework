@@ -26,4 +26,5 @@ class Monet2PhotoConfig(BaseConfig):
     out_channel = 3
 
     # training
-    save_dir = r'D:\ckpt\CycleGanPractice'
+    # save_dir = r'D:\ckpt\CycleGanPractice'
+    save_dir = './ckpt'

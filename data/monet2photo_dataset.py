@@ -39,15 +39,11 @@ class Monet2PhotoDataset(BaseDataset):
         # B_path = os.path.join(self.dir_B, name)
         B_path = self.B_path[idx % self.len_B]
 
-        A_img = Image.open(A_path)
-        B_img = Image.open(B_path)
-        A_img = t.from_numpy(np.array(A_img)).permute(2, 0, 1)
-        B_img = t.from_numpy(np.array(B_img)).permute(2, 0, 1)
+        A_img = Image.open(A_path).convert('RGB')
+        B_img = Image.open(B_path).convert('RGB')
 
-        A_img = A_img / A_img.max() * 255
-        B_img = B_img / B_img.max() * 255
-        A_img = Image.fromarray(np.uint8(A_img)).convert('RGB')
-        B_img = Image.fromarray(np.uint8(B_img)).convert('RGB')
+
+
 
         A = self.transform_A(A_img)
         B = self.transform_B(B_img)
