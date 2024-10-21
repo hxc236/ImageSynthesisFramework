@@ -11,8 +11,8 @@ class Monet2PhotoConfig(BaseConfig):
     preprocess = 'resize'
 
     # monet2photo
-    dataroot = r'F:\ML\Dataset\经典风格迁移数据集\monet2photo'
-    # dataroot = r'D:\Data\经典风格迁移数据集\monet2photo'
+    # dataroot = r'F:\ML\Dataset\经典风格迁移数据集\monet2photo'
+    dataroot = r'D:\Data\经典风格迁移数据集\monet2photo'
 
     dataset = 'monet2photo'
 
@@ -26,5 +26,5 @@ class Monet2PhotoConfig(BaseConfig):
     out_channel = 3
 
     # training
-    # save_dir = r'D:\ckpt\CycleGanPractice'
-    save_dir = './ckpt'
+    save_dir = r'D:\ckpt\CycleGanPractice'
+    # save_dir = './ckpt'

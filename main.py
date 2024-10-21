@@ -13,6 +13,8 @@ def train(**kwargs):
     dataloader = DataLoader(dataset, batch_size=config.batch_size, shuffle=True,
                             num_workers=6, pin_memory=True)
 
+    print(dataloader)
+
     model = getattr(models, config.model)(config)
     model.setup(config)
     # model = CycleGANModel(config)
@@ -41,4 +43,10 @@ def predict(**kwargs):
 
 if __name__ == '__main__':
     import fire
-    fire.Fire()
+    fire.Fire(train)
+
+'''
+# train
+python -u main.py train --dataset monet2photo --model CycleGANModel --batch_size 4
+
+'''

@@ -597,9 +597,27 @@ class UnetBlock(nn.Module):
 
 
 class UnetBlock_with_z(nn.Module):
+    """
+    U-Net块与z（潜在变量）的自定义模块。
+
+    该模块是U-Net架构的一个扩展，允许在网络中引入潜在变量z，以便在图像生成或翻译任务中使用。
+
+    参数:
+    - in_channel: 输入通道数。
+    - out_channel: 输出通道数。
+    - hidden_channel: 隐藏层通道数。
+    - nz: 潜在变量z的维度，默认为0。
+    - pre_module: 前置模块，用于处理潜在变量z。
+    - inner: 是否为最内层的标记。
+    - outer: 是否为最外层的标记。
+    - norm_layer: 归一化层，用于网络中的归一化操作。
+    - use_dropout: 是否使用dropout的标记。
+    """
+
     def __init__(self, in_channel, out_channel, hidden_channel, nz=0, pre_module=None, inner=False, outer=False,
                  norm_layer=None, use_dropout=False):
         super(UnetBlock_with_z, self).__init__()
+        # 初始化下采样卷积层
         downconv = []
         self.inner = inner
         self.outer = outer
@@ -609,6 +627,7 @@ class UnetBlock_with_z(nn.Module):
         downrelu = nn.LeakyReLU(0.2, True)
         uprelu = nn.ReLU(True)
 
+        # 根据是外层、内层还是中间层，构建不同的网络结构
         if self.outer:
             upconv = [nn.ConvTranspose2d(hidden_channel * 2, out_channel, kernel_size=4, stride=2, padding=1)]
             down = downconv
@@ -628,12 +647,24 @@ class UnetBlock_with_z(nn.Module):
         self.up = nn.Sequential(*up)
 
     def forward(self, x, z):
+        """
+        前向传播函数。
+
+        参数:
+        - x: 输入张量。
+        - z: 潜在变量z。
+
+        返回:
+        - 输出张量。
+        """
+        # 根据是否存在潜在变量z，决定是否将z与输入x拼接
         if self.nz > 0:
             z_img = z.view(z.size(0), z.size(1), 1, 1).expand(z.size(0), z.size(1), x.size(2), x.size(3))
             x_and_z = torch.cat([x, z_img], dim=1)
         else:
             x_and_z = x
 
+        # 根据是外层、内层还是中间层，执行不同的前向传播逻辑
         if self.outer:
             x1 = self.down(x_and_z)
             x2 = self.pre_module(x1, z)
