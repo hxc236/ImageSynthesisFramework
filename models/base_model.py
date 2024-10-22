@@ -557,6 +557,7 @@ class UnetBlock(nn.Module):
 
         # 根据Unet块的位置（外层、内层或其他），配置不同的层结构
         if outer:
+            #
             upconv = nn.ConvTranspose2d(hidden_channel * 2, out_channel, kernel_size=4, stride=2, padding=1)
             down = [downconv]
             up = [uprelu, upconv, nn.Tanh()]
@@ -567,8 +568,13 @@ class UnetBlock(nn.Module):
             up = [uprelu, upconv, upnorm]
             model = down + up
         else:
+            # 定义一个二维转置卷积层，用于增加特征图的尺寸
             upconv = nn.ConvTranspose2d(hidden_channel * 2, out_channel, kernel_size=4, stride=2, padding=1, bias=use_bias)
+
+            # 构建下采样层列表，包含激活函数、卷积和标准化操作，用于减小特征图的尺寸
             down = [downrelu, downconv, downnorm]
+
+            # 构建上采样层列表，包含激活函数、转置卷积和标准化操作，用于增加特征图的尺寸
             up = [uprelu, upconv, upnorm]
 
             # 根据需求添加dropout层

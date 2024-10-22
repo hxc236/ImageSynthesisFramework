@@ -34,7 +34,7 @@ class Monet2PhotoDataset(BaseDataset):
     
     def __getitem__(self, idx):
         A_path = self.A_path[idx % self.len_A]
-        name = os.path.basename(A_path)         # 确保A、B文件名一致
+        name = os.path.basename(A_path)         # 两个文件夹名称不同，现实图片的数量更多（6000+），monet风格（1000+），但名称以A为准
         #
         # B_path = os.path.join(self.dir_B, name)
         B_path = self.B_path[idx % self.len_B]
