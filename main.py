@@ -73,60 +73,68 @@ def predict(**kwargs):
 
     for i, data in enumerate(dataset):      # data是__getitem__返回的东西
         i = data['name'][0]     # data['name']是该数据的名称 形如 '00001' 再加个[0]是什么意思？
-        model.set_input(data)
-        model.test()
-        visuals = model.get_current_visuals()
+        # print(i)
 
-        real_A = visuals['real_A'].permute(0, 2, 3, 1)[0, :, :, 0]
+        model.set_input(data)       # 根据配置中的task是AtoB还是BtoA，把data中的A、B任务赋值给model的real_A、real_B
+        model.test()            # forward计算得到结果
+        visuals = model.get_current_visuals()       # 得到一个有序字典，包含model的所有visual_names的值
+
+        # real_A = visuals['real_A'].permute(0, 2, 3, 1)[0, :, :, 0]
+        real_A = visuals['real_A'].permute(0, 2, 3, 1)[0, :, :, :3]  # permute(0,2,3,1)把 n*c*h*w → n*h*w*c, c=3
         real_A = real_A.data.detach().numpy()
+
         np.save(npy_path+'/{}_real_A.npy'.format(i), real_A)
         real_A = (real_A+1)/2.0*255.0
         # real_A = ((real_A-real_A.min())/((real_A.max()-real_A.min())/255))
+        real_A = real_A.astype(np.uint8)            # 要想转RGB，得先转成uint8， 如果是转L，就保持float32就行
         image = Image.fromarray(real_A).convert('RGB')
         image.save(image_path+'/{}_real_A.png'.format(i))
         # plt.imshow(real_A, cmap='gray')
         # plt.show()
 
-        fake_B = visuals['fake_B'].permute(0, 2, 3, 1)[0, :, :, 0]
-    #     fake_B = fake_B.data.detach().numpy()
-    #     np.save(npy_path+'/{}_fake_B.npy'.format(i), fake_B)
-    #     fake_B = (fake_B+1)/2.0*255.0
-    #     # fake_B = ((fake_B-fake_B.min())/((fake_B.max()-fake_B.min())/255))
-    #     image = Image.fromarray(fake_B).convert('L')
-    #     image.save(image_path+'/{}_fake_B.png'.format(i))
-    #     # plt.imshow(fake_B, cmap='gray')
-    #     # plt.show()
-    #
-    #     real_B = visuals['real_B'].permute(0, 2, 3, 1)[0, :, :, 0]
-    #     real_B = real_B.data.detach().numpy()
-    #     np.save(npy_path+'/{}_real_B.npy'.format(i), real_B)
-    #     real_B = (real_B+1)/2.0*255.0
-    #     # real_B = ((real_B-real_B.min())/((real_B.max()-real_B.min())/255))
-    #     image = Image.fromarray(real_B).convert('L')
-    #     image.save(image_path+'/{}_real_B.png'.format(i))
-    #     # plt.imshow(real_B, cmap='gray')
-    #     # plt.show()
-    #
-    #
-    #     #####
-    #
-    #     # real_A = visuals['random_AB'].permute(0, 2, 3, 1)[0, :, :, 0]
-    #     # real_A = real_A.data.detach().numpy()
-    #     # np.save(npy_path+'/{}_random_AB.npy'.format(i), real_A)
-    #     # real_A = (real_A+1)/2.0*255.0
-    #     # image = Image.fromarray(real_A).convert('L')
-    #     # image.save(image_path+'/{}_random_AB.png'.format(i))
+        fake_B = visuals['fake_B'].permute(0, 2, 3, 1)[0, :, :, :3]
+        fake_B = fake_B.data.detach().numpy()
+        np.save(npy_path+'/{}_fake_B.npy'.format(i), fake_B)
+        fake_B = (fake_B+1)/2.0*255.0
+        fake_B = fake_B.astype(np.uint8)
+        # fake_B = ((fake_B-fake_B.min())/((fake_B.max()-fake_B.min())/255))
+        image = Image.fromarray(fake_B).convert('RGB')
+        image.save(image_path+'/{}_fake_B.png'.format(i))
+        # plt.imshow(fake_B, cmap='gray')
+        # plt.show()
+
+        real_B = visuals['real_B'].permute(0, 2, 3, 1)[0, :, :, :3]
+        real_B = real_B.data.detach().numpy()
+        np.save(npy_path+'/{}_real_B.npy'.format(i), real_B)
+        real_B = (real_B+1)/2.0*255.0
+        real_B = real_B.astype(np.uint8)
+        # real_B = ((real_B-real_B.min())/((real_B.max()-real_B.min())/255))
+        image = Image.fromarray(real_B).convert('RGB')
+        image.save(image_path+'/{}_real_B.png'.format(i))
+        # plt.imshow(real_B, cmap='gray')
+
+
+        #####
+
+        # real_A = visuals['random_AB'].permute(0, 2, 3, 1)[0, :, :, 0]
+        # real_A = real_A.data.detach().numpy()
+        # np.save(npy_path+'/{}_random_AB.npy'.format(i), real_A)
+        # real_A = (real_A+1)/2.0*255.0
+        # image = Image.fromarray(real_A).convert('L')
+        # image.save(image_path+'/{}_random_AB.png'.format(i))
 
 
 
 
 if __name__ == '__main__':
     import fire
-    fire.Fire(train)
+    fire.Fire(predict)
+    # fire.Fire(train)
+    # fire.Fire()
 
 '''
 # train
 python -u main.py train --dataset monet2photo --model CycleGANModel --batch_size 4
 
-python -u main.py predict --dataset monet2photo --gpu_ids='' --model CycleGANModel --A='t1' --B='t2' --load_iter=200 --dataroot='D:\Data\经典风格迁移数据集\monet2photo'
+python -u main.py predict --dataset monet2photo --gpu_ids='' --model CycleGANModel --A='trainA' --B='trainB' --load_iter=200 --dataroot='D:\Data\经典风格迁移数据集\monet2photo'
 '''
