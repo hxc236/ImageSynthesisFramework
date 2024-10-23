@@ -1,5 +1,7 @@
 import os
 
+import numpy as np
+from PIL import Image
 from torch.utils.data import DataLoader
 import models
 from config.monet2photo_config import Monet2PhotoConfig
@@ -41,25 +43,25 @@ def train(**kwargs):
 def predict(**kwargs):
     print('kwargs: {}'.format(kwargs))
 
-    config = get_config(kwargs)
+    config = get_config(kwargs)     # 并且根据配置中的数据集名，返回一个数据集对应的配置对象
 
-    config.isTrain = False
+    config.isTrain = False          # 配置中的是否训练设置为否
 
-    dataset = get_dataset(config)
-    print(len(dataset))
+    dataset = get_dataset(config)   # 从配置中获取训练集
+    print(len(dataset))             # 输出查看数据集的长度
 
-    dataset = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=0, pin_memory=True)
+    dataset = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=0, pin_memory=True)   # 创建一个数据加载器
 
-    model = getattr(models, config.model)(config)
-    model.setup(config)
-    model.eval()
+    model = getattr(models, config.model)(config)   # 根据配置中的模型名，返回一个模型对象
+    model.setup(config)             # 因为isTrain设置为False了，直接在这里加载模型权重，通过load_iter参数设置加载哪一轮的模型
+    model.eval()                    # 把model中每个网络都设置为评估模式
 
     if config.task == 'AtoB':
         task = '{}_to_{}'.format(config.A, config.B)
     else:
         task = '{}_to_{}'.format(config.B, config.A)
 
-    output_path = './output/{}_{}'.format(config.model, task)
+    output_path = './output/{}_{}_{}'.format(config.dataset, config.model, task)
     image_path = output_path + '/image'
     npy_path = output_path + '/npy'
     if not os.path.exists(output_path):
@@ -69,24 +71,23 @@ def predict(**kwargs):
     if not os.path.exists(npy_path):
         os.makedirs(npy_path)
 
-    # ... continue
-    # for i, data in enumerate(dataset):
-    #     i = data['name'][0]
-    #     model.set_input(data)
-    #     model.test()
-    #     visuals = model.get_current_visuals()
-    #
-    #     real_A = visuals['real_A'].permute(0, 2, 3, 1)[0, :, :, 0]
-    #     real_A = real_A.data.detach().numpy()
-    #     np.save(npy_path+'/{}_real_A.npy'.format(i), real_A)
-    #     real_A = (real_A+1)/2.0*255.0
-    #     # real_A = ((real_A-real_A.min())/((real_A.max()-real_A.min())/255))
-    #     image = Image.fromarray(real_A).convert('L')
-    #     image.save(image_path+'/{}_real_A.png'.format(i))
-    #     # plt.imshow(real_A, cmap='gray')
-    #     # plt.show()
-    #
-    #     fake_B = visuals['fake_B'].permute(0, 2, 3, 1)[0, :, :, 0]
+    for i, data in enumerate(dataset):      # data是__getitem__返回的东西
+        i = data['name'][0]     # data['name']是该数据的名称 形如 '00001' 再加个[0]是什么意思？
+        model.set_input(data)
+        model.test()
+        visuals = model.get_current_visuals()
+
+        real_A = visuals['real_A'].permute(0, 2, 3, 1)[0, :, :, 0]
+        real_A = real_A.data.detach().numpy()
+        np.save(npy_path+'/{}_real_A.npy'.format(i), real_A)
+        real_A = (real_A+1)/2.0*255.0
+        # real_A = ((real_A-real_A.min())/((real_A.max()-real_A.min())/255))
+        image = Image.fromarray(real_A).convert('RGB')
+        image.save(image_path+'/{}_real_A.png'.format(i))
+        # plt.imshow(real_A, cmap='gray')
+        # plt.show()
+
+        fake_B = visuals['fake_B'].permute(0, 2, 3, 1)[0, :, :, 0]
     #     fake_B = fake_B.data.detach().numpy()
     #     np.save(npy_path+'/{}_fake_B.npy'.format(i), fake_B)
     #     fake_B = (fake_B+1)/2.0*255.0
@@ -127,4 +128,5 @@ if __name__ == '__main__':
 # train
 python -u main.py train --dataset monet2photo --model CycleGANModel --batch_size 4
 
+python -u main.py predict --dataset monet2photo --gpu_ids='' --model CycleGANModel --A='t1' --B='t2' --load_iter=200 --dataroot='D:\Data\经典风格迁移数据集\monet2photo'
 '''

@@ -89,7 +89,7 @@ class BaseModel(nn.Module):
             if conf.load_iter == 'latest':
                 load_suffix = 'latest'
             else:
-                # 确保配置的迭代次数大于0，否则使用epoch数
+                # 确保配置的迭代次数大于0，否则使用epoch数（epoch默认为latest）
                 load_suffix = 'iter_%d' % conf.load_iter if conf.load_iter > 0 else conf.epoch
             # 根据确定的后缀加载网络
             self.load_networks(load_suffix)
@@ -98,9 +98,9 @@ class BaseModel(nn.Module):
 
     def eval(self):
         for name in self.model_names:
-            if isinstance(name, str):
-                net = getattr(self, 'net' + name)
-                net.eval()
+            if isinstance(name, str):       # 网络名称是否为字符串类型
+                net = getattr(self, 'net' + name)   # 假如说name='G_A2B' 那net加载的就是self.netG_A2B
+                net.eval()                  # 将网络设置为评估模式
 
     def test(self):
         """

@@ -45,7 +45,7 @@ class Monet2PhotoDataset(BaseDataset):
 
 
 
-        A = self.transform_A(A_img)
+        A = self.transform_A(A_img)     # 一个Tensor
         B = self.transform_B(B_img)
 
         return {'A': A, 'B': B, 'A_paths': A_path, 'B_paths': B_path, 'name': name}
