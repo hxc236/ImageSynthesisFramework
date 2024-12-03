@@ -74,3 +74,12 @@ def transform_resize(conf, method=Image.BICUBIC):
     osize = [conf.load_size, conf.load_size]
     transforms_list.append(transforms.Resize(osize, method))
     return transforms.Compose(transforms_list)
+
+
+
+def normalize(image):
+    return (image-image.mean())/image.std()
+
+def standard(image): # range in [-1, 1]
+    return (image - image.mean())/(image.max() - image.min())
+

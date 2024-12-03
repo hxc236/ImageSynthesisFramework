@@ -1,4 +1,7 @@
+import math
+
 import torch
+import torch as th
 import torch.nn as nn
 import numpy as np
 from torch.nn import init
@@ -74,8 +77,10 @@ class BaseModel(nn.Module):
         """
         根据配置和训练状态初始化模型。
 
-        这个方法在模型设置阶段被调用，用于处理网络的加载和打印。
-        它根据模型是否处于训练状态和配置信息决定是否加载或初始化网络。
+        设置了：
+            isTrain
+            load_suffix
+        打印了网络信息
 
         参数:
         - conf: 配置对象，包含了模型训练或测试的各种参数。
@@ -263,6 +268,9 @@ class BaseModel(nn.Module):
 
         Parameters:
             epoch (int) -- current epoch; used in the file name '%s_net_%s.pth' % (epoch, name)
+
+        加载了
+
         """
         for name in self.model_names:
             if isinstance(name, str):
@@ -1017,3 +1025,24 @@ def get_scheduler(optimizer, conf):
     else:
         return NotImplementedError('learning rate policy [%s] is not implemented', conf.lr_policy)
     return scheduler
+
+
+def timestep_embedding(timesteps, dim, max_period=10000):
+    """
+    Create sinusoidal timestep embeddings.      创建一个正弦的timestep embedding
+
+    :param timesteps: a 1-D Tensor of N indices, one per batch element.
+                      These may be fractional.
+    :param dim: the dimension of the output.
+    :param max_period: controls the minimum frequency of the embeddings.
+    :return: an [N x dim] Tensor of positional embeddings.
+    """
+    half = dim // 2
+    freqs = th.exp(
+        -math.log(max_period) * th.arange(start=0, end=half, dtype=th.float32) / half
+    ).to(device=timesteps.device)
+    args = timesteps[:, None].float() * freqs[None]
+    embedding = th.cat([th.cos(args), th.sin(args)], dim=-1)
+    if dim % 2:
+        embedding = th.cat([embedding, th.zeros_like(embedding[:, :1])], dim=-1)
+    return embedding

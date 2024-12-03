@@ -1,11 +1,13 @@
-import functools
-import itertools
-import random
+"""
+ResCycleGAN
+"""
 
 import torch
-from torch import nn
-from models.base_model import BaseModel, ResnetBlock, get_norm_layer, init_net
-
+import torch.nn as nn
+from models.base_model import ResnetBlock, init_net, get_norm_layer, BaseModel
+import functools
+import random
+import itertools
 
 class ResnetGenerator(nn.Module):
     """
@@ -132,46 +134,38 @@ class ResnetGenerator(nn.Module):
         )
     )
     """
-
-    def __init__(self, in_channel, out_channel, ngf=64, norm_layer=nn.BatchNorm2d, use_dropout=False, n_blocks=6,
-                 padding_type='reflect'):
+    def __init__(self, in_channel, out_channel, ngf=64, norm_layer=nn.BatchNorm2d, use_dropout=False, n_blocks=6, padding_type='reflect'):
         super().__init__()
         if type(norm_layer) == functools.partial:
             use_bias = norm_layer.func == nn.InstanceNorm2d
         else:
             use_bias = norm_layer == nn.InstanceNorm2d
-
-        model = [nn.ReflectionPad2d(3), nn.Conv2d(in_channel, ngf, kernel_size=7, padding=0, bias=use_bias),
-                 norm_layer(ngf), nn.ReLU(True)]
+        
+        model = [nn.ReflectionPad2d(3), nn.Conv2d(in_channel, ngf, kernel_size=7, padding=0, bias=use_bias), norm_layer(ngf), nn.ReLU(True)]
 
         n_downsampling = 2
         for i in range(n_downsampling):
-            mult = 2 ** i   # mult = 0, 1 -> (64, 128), (128, 256)
-            model += [nn.Conv2d(ngf * mult, ngf * mult * 2, kernel_size=3, stride=2, padding=1, bias=use_bias),
-                      norm_layer(ngf * mult * 2), nn.ReLU(True)]
-
-        mult = 2 ** n_downsampling  # mult = 4
+            mult = 2 ** i
+            model += [nn.Conv2d(ngf*mult, ngf*mult*2, kernel_size=3, stride=2, padding=1, bias=use_bias),norm_layer(ngf*mult*2), nn.ReLU(True)]
+        
+        mult = 2 ** n_downsampling
         for i in range(n_blocks):
-            # 6 resnet blocks, 64 * 4 = 256
-            model += [ResnetBlock(ngf * mult, padding_type=padding_type, norm_layer=norm_layer, use_dropout=use_dropout,
-                                  use_bias=use_bias)]
-
+            model += [ResnetBlock(ngf*mult, padding_type=padding_type, norm_layer=norm_layer, use_dropout=use_dropout, use_bias=use_bias)]
+        
         for i in range(n_downsampling):
-            mult = 2 ** (n_downsampling - i)
-            model += [nn.ConvTranspose2d(ngf * mult, int(ngf * mult / 2), kernel_size=3, stride=2, padding=1,
-                                         output_padding=1, bias=use_bias),
-                      norm_layer(int(ngf * mult / 2)),
-                      nn.ReLU(True)
-                      ]
+            mult = 2 ** (n_downsampling-i)
+            model += [nn.ConvTranspose2d(ngf*mult, int(ngf*mult/2), kernel_size=3, stride=2, padding=1, output_padding=1, bias=use_bias),
+                    norm_layer(int(ngf*mult/2)),
+                    nn.ReLU(True)
+                    ]
         model += [nn.ReflectionPad2d(3)]
         model += [nn.Conv2d(ngf, out_channel, kernel_size=7, padding=0)]
         model += [nn.Tanh()]
 
         self.model = nn.Sequential(*model)
-
+    
     def forward(self, x):
         return self.model(x)
-
 
 class NLayerDiscriminator(nn.Module):
     """
@@ -192,14 +186,13 @@ class NLayerDiscriminator(nn.Module):
         )
     )
     """
-
     def __init__(self, in_channel, ndf=64, n_layers=3, norm_layer=nn.BatchNorm2d):
         super().__init__()
         if type(norm_layer) == functools.partial:  # no need to use bias as BatchNorm2d has affine parameters
             use_bias = norm_layer.func == nn.InstanceNorm2d
         else:
             use_bias = norm_layer == nn.InstanceNorm2d
-
+        
         kw = 4
         padw = 1
         sequence = [nn.Conv2d(in_channel, ndf, kernel_size=kw, stride=2, padding=padw), nn.LeakyReLU(0.2, True)]
@@ -207,13 +200,13 @@ class NLayerDiscriminator(nn.Module):
         nf_mult_prev = 1
         for n in range(1, n_layers):
             nf_mult_prev = nf_mult
-            nf_mult = min(2 ** n, 8)
+            nf_mult = min(2**n, 8)
             sequence += [
-                nn.Conv2d(ndf * nf_mult_prev, ndf * nf_mult, kernel_size=kw, stride=2, padding=padw, bias=use_bias),
-                norm_layer(ndf * nf_mult),
+                nn.Conv2d(ndf*nf_mult_prev, ndf*nf_mult, kernel_size=kw, stride=2, padding=padw, bias=use_bias),
+                norm_layer(ndf*nf_mult),
                 nn.LeakyReLU(0.2, True)
             ]
-
+        
         nf_mult_prev = nf_mult
         nf_mult = min(2 ** n_layers, 8)
         sequence += [
@@ -222,21 +215,17 @@ class NLayerDiscriminator(nn.Module):
             nn.LeakyReLU(0.2, True)
         ]
 
-        sequence += [
-            nn.Conv2d(ndf * nf_mult, 1, kernel_size=kw, stride=1, padding=padw)]  # output 1 channel prediction map
+        sequence += [nn.Conv2d(ndf * nf_mult, 1, kernel_size=kw, stride=1, padding=padw)]  # output 1 channel prediction map
         self.model = nn.Sequential(*sequence)
-
+    
     def forward(self, x):
         return self.model(x)
 
-
-def define_G(in_channel, out_channel, ngf, norm='batch', use_dropout=False, init_type='normal', init_gain=0.02,
-             gpu_ids=[]):
+def define_G(in_channel, out_channel, ngf, norm='batch', use_dropout=False, init_type='normal', init_gain=0.02, gpu_ids=[]):
     norm_layer = get_norm_layer(norm_type=norm)
     net = ResnetGenerator(in_channel, out_channel, ngf, norm_layer=norm_layer, n_blocks=9)
 
     return init_net(net, init_type, init_gain, gpu_ids)
-
 
 def define_D(in_channel, ndf, n_layers_D=3, norm='batch', init_type='normal', init_gain=0.02, gpu_ids=[]):
     norm_layer = get_norm_layer(norm_type=norm)
@@ -251,7 +240,7 @@ class GANLoss(nn.Module):
         self.register_buffer('real_label', torch.tensor(target_real_label))
         self.register_buffer('fake_label', torch.tensor(target_fake_label))
         self.loss = nn.MSELoss()
-
+    
     def get_target_tensor(self, prediction, target_is_real):
         if target_is_real:
             target_tensor = self.real_label
@@ -264,17 +253,15 @@ class GANLoss(nn.Module):
         loss = self.loss(prediction, target_tensor)
         return loss
 
-
 class ImagePool():
     """This class implments an image buffer that stores previously generated images.
     """
-
     def __init__(self, pool_size):
         self.pool_size = pool_size
         if self.pool_size > 0:
             self.num_imgs = 0
             self.images = []
-
+    
     def query(self, images):
         if self.pool_size == 0:
             return images
@@ -282,13 +269,13 @@ class ImagePool():
         for image in images:
             image = torch.unsqueeze(image.data, 0)
             if self.num_imgs < self.pool_size:
-                self.num_imgs = self.num_imgs + 1
+                self.num_imgs = self.num_imgs +1
                 self.images.append(image)
                 return_images.append(image)
             else:
                 p = random.uniform(0, 1)
                 if p > 0.5:
-                    random_id = random.randint(0, self.pool_size - 1)
+                    random_id = random.randint(0, self.pool_size -1)
                     tmp = self.images[random_id].clone()
                     self.images[random_id] = image
                     return_images.append(tmp)
@@ -298,7 +285,7 @@ class ImagePool():
         return return_images
 
 
-class CycleGANModel(BaseModel):
+class ResCycleGANModel(BaseModel):
     def __init__(self, conf):
         BaseModel.__init__(self, conf)
         self.loss_names = ['D_A', 'G_A', 'cycle_A', 'idt_A', 'D_B', 'G_B', 'cycle_B', 'idt_B']
@@ -313,18 +300,14 @@ class CycleGANModel(BaseModel):
             self.model_names = ['G_A2B', 'G_B2A', 'D_A', 'D_B']
         else:
             self.model_names = ['G_A2B', 'G_B2A']
-
-        self.netG_A2B = define_G(conf.in_channel, conf.out_channel, 64, norm='instance', use_dropout=True,
-                                 init_type='normal', init_gain=0.02, gpu_ids=self.gpu_ids)
-        self.netG_B2A = define_G(conf.out_channel, conf.in_channel, 64, norm='instance', use_dropout=True,
-                                 init_type='normal', init_gain=0.02, gpu_ids=self.gpu_ids)
+        
+        self.netG_A2B = define_G(conf.in_channel, conf.out_channel, 64, norm='instance', use_dropout=True, init_type='normal', init_gain=0.02, gpu_ids=self.gpu_ids)
+        self.netG_B2A = define_G(conf.out_channel, conf.in_channel, 64, norm='instance', use_dropout=True, init_type='normal', init_gain=0.02, gpu_ids=self.gpu_ids)
 
         if self.isTrain:
-            self.netD_A = define_D(conf.out_channel, 64, 3, norm='instance', init_type='normal', init_gain=0.02,
-                                   gpu_ids=self.gpu_ids)
-            self.netD_B = define_D(conf.in_channel, 64, 3, norm='instance', init_type='normal', init_gain=0.02,
-                                   gpu_ids=self.gpu_ids)
-
+            self.netD_A = define_D(conf.out_channel, 64, 3, norm='instance', init_type='normal', init_gain=0.02, gpu_ids=self.gpu_ids)
+            self.netD_B = define_D(conf.in_channel, 64, 3, norm='instance', init_type='normal', init_gain=0.02, gpu_ids=self.gpu_ids)
+        
             # need to 3 channel
             # assert(conf.in_channel == conf.out_channel)
             self.fake_A_pool = ImagePool(50)
@@ -334,10 +317,8 @@ class CycleGANModel(BaseModel):
             self.criterionCycle = torch.nn.L1Loss()
             self.criterionIdt = torch.nn.L1Loss()
 
-            self.optimizer_G = torch.optim.Adam(itertools.chain(self.netG_A2B.parameters(), self.netG_B2A.parameters()),
-                                                lr=conf.lr, betas=(0.5, 0.999))
-            self.optimizer_D = torch.optim.Adam(itertools.chain(self.netD_A.parameters(), self.netD_B.parameters()),
-                                                lr=conf.lr, betas=(0.5, 0.999))
+            self.optimizer_G = torch.optim.Adam(itertools.chain(self.netG_A2B.parameters(), self.netG_B2A.parameters()), lr=conf.lr, betas=(0.5, 0.999))
+            self.optimizer_D = torch.optim.Adam(itertools.chain(self.netD_A.parameters(), self.netD_B.parameters()), lr=conf.lr, betas=(0.5, 0.999))
             self.optimizers.append(self.optimizer_G)
             self.optimizers.append(self.optimizer_D)
 
@@ -347,7 +328,7 @@ class CycleGANModel(BaseModel):
         self.real_A = input['A' if task else 'B'].to(self.device)
         self.real_B = input['B' if task else 'A'].to(self.device)
         self.image_paths = input['A_paths' if task else 'B_paths']
-
+    
     def forward(self):
         self.fake_B = self.netG_A2B(self.real_A)
         self.rec_A = self.netG_B2A(self.fake_B)
@@ -364,7 +345,7 @@ class CycleGANModel(BaseModel):
         loss_D = (loss_D_real + loss_D_fake) * 0.5
         loss_D.backward()
         return loss_D
-
+    
     def backward_D_A(self):
         fake_B = self.fake_B
         # fake_B = self.fake_B_pool.query(self.fake_B) # for unpaired images
@@ -374,7 +355,7 @@ class CycleGANModel(BaseModel):
         fake_A = self.fake_A
         # fake_A = self.fake_A_pool.query(self.fake_A)
         self.loss_D_B = self.backward_D_basic(self.netD_B, self.real_A, fake_A)
-
+    
     def backward_G(self):
         lambda_idt = 0.5
         lambda_A = 10.0
@@ -399,9 +380,15 @@ class CycleGANModel(BaseModel):
         self.optimizer_G.zero_grad()
         self.backward_G()
         self.optimizer_G.step()
-
+        
         self.set_requires_grad([self.netD_A, self.netD_B], True)
         self.optimizer_D.zero_grad()
         self.backward_D_A()
         self.backward_D_B()
         self.optimizer_D.step()
+
+
+
+
+
+

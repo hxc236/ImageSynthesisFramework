@@ -54,7 +54,7 @@ def predict(**kwargs):
 
     model = getattr(models, config.model)(config)   # 根据配置中的模型名，返回一个模型对象
     model.setup(config)             # 因为isTrain设置为False了，直接在这里加载模型权重，通过load_iter参数设置加载哪一轮的模型
-    model.eval()                    # 把model中每个网络都设置为评估模式
+    model.eval()                    # 把model中每个网络都设置为评估(推理)模式
 
     if config.task == 'AtoB':
         task = '{}_to_{}'.format(config.A, config.B)
@@ -79,44 +79,68 @@ def predict(**kwargs):
         model.test()            # forward计算得到结果
         visuals = model.get_current_visuals()       # 得到一个有序字典，包含model的所有visual_names的值
 
-        # real_A = visuals['real_A'].permute(0, 2, 3, 1)[0, :, :, 0]
-        real_A = visuals['real_A'].permute(0, 2, 3, 1)[0, :, :, :3]  # permute(0,2,3,1)把 n*c*h*w → n*h*w*c, c=3
-        real_A = real_A.data.detach().numpy()
+        if config.out_channel == 1:
+            single_channel = True
+        else:
+            single_channel = False
 
+        # real_A
+        if single_channel:
+            real_A = visuals['real_A'].permute(0, 2, 3, 1)[0, :, :, 0]
+        else:   # permute(0,2,3,1)把 n*c*h*w → n*h*w*c, c=3
+            real_A = visuals['real_A'].permute(0, 2, 3, 1)[0, :, :, :config.out_channel]
+        real_A = real_A.data.detach().numpy()
         np.save(npy_path+'/{}_real_A.npy'.format(i), real_A)
         real_A = (real_A+1)/2.0*255.0
         # real_A = ((real_A-real_A.min())/((real_A.max()-real_A.min())/255))
-        real_A = real_A.astype(np.uint8)            # 要想转RGB，得先转成uint8， 如果是转L，就保持float32就行
-        image = Image.fromarray(real_A).convert('RGB')
+        if single_channel:      # 如果是灰度图
+            image = Image.fromarray(real_A).convert('L')
+        else:                   # 如果是3通道RGB彩色图
+            real_A = real_A.astype(np.uint8)            # 要想转RGB，得先转成uint8， 如果是转L，就保持float32就行
+            image = Image.fromarray(real_A).convert('RGB')
         image.save(image_path+'/{}_real_A.png'.format(i))
         # plt.imshow(real_A, cmap='gray')
         # plt.show()
 
-        fake_B = visuals['fake_B'].permute(0, 2, 3, 1)[0, :, :, :3]
+        # fakeB
+        if single_channel:
+            fake_B = visuals['fake_B'].permute(0, 2, 3, 1)[0, :, :, 0]
+        else:   # permute(0,2,3,1)把 n*c*h*w → n*h*w*c, c=3
+            fake_B = visuals['fake_B'].permute(0, 2, 3, 1)[0, :, :, :config.out_channel]
         fake_B = fake_B.data.detach().numpy()
         np.save(npy_path+'/{}_fake_B.npy'.format(i), fake_B)
         fake_B = (fake_B+1)/2.0*255.0
-        fake_B = fake_B.astype(np.uint8)
-        # fake_B = ((fake_B-fake_B.min())/((fake_B.max()-fake_B.min())/255))
-        image = Image.fromarray(fake_B).convert('RGB')
+
+        if single_channel:      # 如果是灰度图
+            image = Image.fromarray(fake_B).convert('L')
+        else:                   # 如果是3通道RGB彩色图
+            fake_B = fake_B.astype(np.uint8)            # 要想转RGB，得先转成uint8， 如果是转L，就保持float32就行
+            image = Image.fromarray(fake_B).convert('RGB')
+
         image.save(image_path+'/{}_fake_B.png'.format(i))
         # plt.imshow(fake_B, cmap='gray')
         # plt.show()
 
-        real_B = visuals['real_B'].permute(0, 2, 3, 1)[0, :, :, :3]
+        # real_B
+        if single_channel:
+            real_B = visuals['real_B'].permute(0, 2, 3, 1)[0, :, :, 0]
+        else:   # permute(0,2,3,1)把 n*c*h*w → n*h*w*c, c=3
+            real_B = visuals['real_B'].permute(0, 2, 3, 1)[0, :, :, :config.out_channel]
         real_B = real_B.data.detach().numpy()
         np.save(npy_path+'/{}_real_B.npy'.format(i), real_B)
         real_B = (real_B+1)/2.0*255.0
-        real_B = real_B.astype(np.uint8)
-        # real_B = ((real_B-real_B.min())/((real_B.max()-real_B.min())/255))
-        image = Image.fromarray(real_B).convert('RGB')
+        if single_channel:      # 如果是灰度图
+            image = Image.fromarray(real_B).convert('L')
+        else:                   # 如果是3通道RGB彩色图
+            real_B = real_B.astype(np.uint8)            # 要想转RGB，得先转成uint8， 如果是转L，就保持float32就行
+            image = Image.fromarray(real_B).convert('RGB')
         image.save(image_path+'/{}_real_B.png'.format(i))
         # plt.imshow(real_B, cmap='gray')
 
 
         #####
 
-        # real_A = visuals['random_AB'].permute(0, 2, 3, 1)[0, :, :, 0]
+        # real_A = visuals['random_AB'].permute(0, 2, 3, 1)[0, :, :, 0]python main.py predict --gpu_ids='' --model='Pix2pixModel' --A='flair' --B='t1ce' --load_iter=200 --dataroot='D:/PreparedData/BrainT1T2FT/npyFTTTest'
         # real_A = real_A.data.detach().numpy()
         # np.save(npy_path+'/{}_random_AB.npy'.format(i), real_A)
         # real_A = (real_A+1)/2.0*255.0
@@ -128,9 +152,9 @@ def predict(**kwargs):
 
 if __name__ == '__main__':
     import fire
-    fire.Fire(predict)
+    # fire.Fire(predict)
     # fire.Fire(train)
-    # fire.Fire()
+    fire.Fire()
 
 '''
 # train
